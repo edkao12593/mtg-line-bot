@@ -24,18 +24,19 @@ def display_name(obj):
     return obj.name
 
 
-def rules(obj):
+def rules(obj, *, lang="en", use_printed=True):
     components = []
     if obj.mana_cost:
         components.append(text(obj.mana_cost, weight="bold"))
     if obj.printed_type_line or obj.type_line:
         components.append(text(obj.printed_type_line or obj.type_line, color="#596579"))
-    if obj.printed_text and obj.printed_text != obj.oracle_text:
-        components.append(text("牌面文字", weight="bold", color="#596579"))
+    if lang == "en":
+        if obj.oracle_text:
+            components.append(text(obj.oracle_text))
+    elif use_printed and obj.printed_text:
         components.append(text(obj.printed_text))
-        components.append(text("現行 Oracle（英文）", weight="bold", color="#596579"))
-    if obj.oracle_text:
-        components.append(text(obj.oracle_text))
+    else:
+        components.append(text("未提供此語言牌面文字，請在 Scryfall 查看。", color="#738095"))
     stats = f"{obj.power}/{obj.toughness}" if obj.power or obj.toughness else ""
     if obj.loyalty:
         stats += (" · " if stats else "") + "Loyalty " + obj.loyalty
@@ -91,11 +92,13 @@ def card_bubble(response: CardResponse):
                 contents.append(image(url) if url else text("這一面的卡圖未提供。"))
     else:
         # Split/adventure cards share one printed image but retain both rules faces.
-        details = rules(card)
+        lang = card.requested_lang or card.lang
+        use_printed = card.lang == lang
+        details = rules(card, lang=lang, use_printed=use_printed)
         if card.faces and not card.oracle_text:
             details = []
             for face in card.faces:
-                details += [text(display_name(face), weight="bold", limit=200)] + rules(face)
+                details += [text(display_name(face), weight="bold", limit=200)] + rules(face, lang=lang, use_printed=use_printed)
         if not details:
             details = [text("卡牌文字未提供，請在 Scryfall 查看。")]
         thumbnails = [image(url, small=True) for _, url in panels if url]
@@ -112,8 +115,6 @@ def card_bubble(response: CardResponse):
         contents.append(text(card.language_note, color="#738095"))
     if card.lang != "en":
         contents.append(text(f"Scryfall 語言：{card.lang}", color="#738095", limit=100))
-        if response.mode == "text" and not (card.printed_text or any(f.printed_text for f in card.faces)):
-            contents.append(text("未提供此語言牌面文字；顯示英文 Oracle。", color="#738095"))
     bubble["body"] = {"type": "box", "layout": "vertical", "spacing": "md", "contents": contents}
     bubble["footer"] = {"type": "box", "layout": "vertical", "contents": [{
         "type": "button", "style": "link", "height": "sm",

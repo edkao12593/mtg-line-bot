@@ -52,6 +52,7 @@ class Card:
     printed_type_line: str = ""
     printed_text: str = ""
 
+    requested_lang: str = ""
     language_note: str = ""
     lang: str = "en"
     set_name: str = ""

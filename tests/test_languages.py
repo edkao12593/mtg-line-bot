@@ -37,7 +37,10 @@ async def test_scryfall_names_forwarded_without_translation(language,name):
             data=json.dumps(to_line_messages(responses)[0].to_dict(),ensure_ascii=False)
             assert name in data and 'Counterspell' in data
             assert f'/{language}.jpg' in data
-            assert 'official printed text' in data and 'Counter target spell.' in data
+            if language == 'en':
+                assert 'Counter target spell.' in data and 'official printed text' not in data
+            else:
+                assert 'official printed text' in data and 'Counter target spell.' not in data
             assert 'utm_source' not in data and len(calls)==1
         finally: await resolver.close()
 
@@ -51,7 +54,7 @@ def test_partial_language_data(card,missing):
     if missing not in ('name','all'): data['printed_name']='対抗呪文'
     decoded=decode_card(data)
     output=json.dumps(to_line_messages([CardResponse(decoded)])[0].to_dict(),ensure_ascii=False)
-    assert 'Counterspell' in output and 'Counter target spell.' in output
+    assert 'Counterspell' in output and 'Counter target spell.' not in output
     if missing in ('image','all'): assert '卡圖未提供' in output and 'hero' not in output
     if missing in ('text','all'): assert '未提供此語言牌面文字' in output
     if missing in ('name','all'): assert '対抗呪文' not in output
@@ -68,7 +71,9 @@ def test_localized_double_faces(card):
         output=json.dumps(to_line_messages([CardResponse(decoded,mode)])[0].to_dict(),ensure_ascii=False)
         assert '表' in output and '裏' in output
         assert 'front-ja.jpg' in output and 'back-ja.jpg' in output
-        if mode=='text': assert '表テキスト' in output and '裏テキスト' in output
+        if mode=='text':
+            assert '表テキスト' in output and '裏テキスト' in output
+            assert 'Front rules' not in output and 'Back rules' not in output
 
 
 async def test_localized_set_and_collector_and_cache_separation():
@@ -102,7 +107,7 @@ async def test_missing_language_print_keeps_exact_print_and_notes():
     async with httpx.AsyncClient(transport=httpx.MockTransport(mock)) as http:
         client=ScryfallClient(http,user_agent='test')
         card=await client.get_card_by_collector('7ed','67','対抗呪文')
-        assert card.lang=='en' and '未收錄' in card.language_note
+        assert card.lang=='en' and card.requested_lang=='ja' and '未收錄' in card.language_note
         assert card.scryfall_uri.endswith('/7ed/67')
 
 
@@ -118,3 +123,10 @@ def test_unknown_language_code_displays_as_provided(card):
     card=replace(card,lang='future-language',printed_name='Provided name')
     data=json.dumps(to_line_messages([CardResponse(card)])[0].to_dict())
     assert 'future-language' in data and 'Provided name' in data
+
+
+def test_foreign_print_fallback_does_not_show_english_oracle(card):
+    card=replace(card,lang='en',requested_lang='ja',oracle_text='English Oracle',printed_text='English printed text')
+    data=json.dumps(to_line_messages([CardResponse(card)])[0].to_dict(),ensure_ascii=False)
+    assert 'English Oracle' not in data and 'English printed text' not in data
+    assert '未提供此語言牌面文字' in data

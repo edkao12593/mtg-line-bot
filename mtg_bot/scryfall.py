@@ -84,8 +84,8 @@ class ScryfallClient:
             return self._decode(await self._request(url + "/" + quote(named.lang, safe='')))
         except ScryfallError as error:
             if error.kind == "not_found":
-                return replace(card, language_note=f"Scryfall 未收錄此版本的 {named.lang} 資料；顯示預設版本。")
-            return replace(card, language_note="此語言版本暫時無法取得；顯示預設版本。")
+                return replace(card, requested_lang=named.lang, language_note=f"Scryfall 未收錄此版本的 {named.lang} 資料；顯示預設版本。")
+            return replace(card, requested_lang=named.lang, language_note="此語言版本暫時無法取得；顯示預設版本。")
 
     def _decode(self, data: dict) -> Card:
         try:
