@@ -1,5 +1,6 @@
 import asyncio
 import time
+from dataclasses import replace
 from urllib.parse import urlparse, quote, parse_qsl
 import httpx
 from .models import Card, CardFace
@@ -43,11 +44,12 @@ def decode_card(data: dict) -> Card:
         return safe_image_url((obj.get("image_uris") or {}).get("normal"))
     def fields(obj):
         return {key: str(obj.get(key) or "") for key in (
-            "mana_cost", "type_line", "oracle_text", "flavor_text", "power", "toughness", "loyalty"
+            "mana_cost", "type_line", "oracle_text", "flavor_text", "power", "toughness", "loyalty",
+            "printed_name", "printed_type_line", "printed_text"
         )}
     return Card(data["id"], data["name"], data["layout"], data["scryfall_uri"], image(data),
                 tuple(CardFace(f["name"], image(f), **fields(f)) for f in data.get("card_faces", [])),
-                **fields(data), set_name=str(data.get("set_name") or ""),
+                **fields(data), lang=str(data.get("lang") or "en"), set_name=str(data.get("set_name") or ""),
                 collector_number=str(data.get("collector_number") or ""),
                 prints_search_uri=str(data.get("prints_search_uri") or ""),
                 legalities=tuple((str(k), str(v)) for k, v in (data.get("legalities") or {}).items()),
@@ -66,9 +68,24 @@ class ScryfallClient:
             params["set"] = set_code
         return self._decode(await self._request("https://api.scryfall.com/cards/named", params=params))
 
-    async def get_card_by_collector(self, set_code: str, number: str) -> Card:
+    async def get_card_by_collector(self, set_code: str, number: str, name: str | None = None) -> Card:
         url = f"https://api.scryfall.com/cards/{quote(set_code, safe='')}/{quote(number, safe='')}"
-        return self._decode(await self._request(url))
+        # Set+number determines identity; the name only hints at language.
+        card = self._decode(await self._request(url))
+        if not name:
+            return card
+        try:
+            named = await self.get_card_by_name(name)
+        except ScryfallError:
+            return card
+        if named.lang == card.lang:
+            return card
+        try:
+            return self._decode(await self._request(url + "/" + quote(named.lang, safe='')))
+        except ScryfallError as error:
+            if error.kind == "not_found":
+                return replace(card, language_note=f"Scryfall 未收錄此版本的 {named.lang} 資料；顯示預設版本。")
+            return replace(card, language_note="此語言版本暫時無法取得；顯示預設版本。")
 
     def _decode(self, data: dict) -> Card:
         try:

@@ -23,7 +23,7 @@ def test_first_prefix(raw, mode):
 def test_empty_prefix_and_version_validation():
     assert not parse_queries('[[$]] [[?]] [[#]] [[!]]').queries
     parsed = parse_queries('[[Jace|WWK|31a]] [[Sol Ring|wwk|31a]] [[Sol Ring|CMM]] [[Sol Ring]]')
-    assert len(parsed.queries) == 3
+    assert len(parsed.queries) == 4
     assert parsed.queries[0].collector_number == '31a'
     assert parse_queries('[[A||31]] [[A|B|1|extra]]').notices
     assert parse_queries('[[Jace|WWK|]]').queries[0].collector_number is None

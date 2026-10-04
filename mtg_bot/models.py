@@ -28,6 +28,9 @@ class CardFace:
     power: str = ""
     toughness: str = ""
     loyalty: str = ""
+    printed_name: str = ""
+    printed_type_line: str = ""
+    printed_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,7 +48,12 @@ class Card:
     power: str = ""
     toughness: str = ""
     loyalty: str = ""
+    printed_name: str = ""
+    printed_type_line: str = ""
+    printed_text: str = ""
 
+    language_note: str = ""
+    lang: str = "en"
     set_name: str = ""
     collector_number: str = ""
     prints_search_uri: str = ""

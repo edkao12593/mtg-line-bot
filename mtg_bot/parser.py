@@ -37,7 +37,7 @@ def parse_queries(text: str, *, max_queries: int = 9, max_name_length: int = 200
         if (set_code and not re.fullmatch(r"[a-z0-9]{1,12}", set_code)) or (number and not re.fullmatch(r"[\w★.-]{1,30}", number)):
             notices.append("系列或收藏編號格式錯誤。")
             continue
-        key = (f"print:{set_code}:{number}" if number else
+        key = (f"print:{set_code}:{number}:{normalize(name)}" if number else
                f"named:{normalize(name)}:{set_code}" if set_code else normalize(name))
         display_key = (key, mode)
         if display_key in seen:

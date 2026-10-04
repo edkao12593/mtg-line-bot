@@ -18,12 +18,22 @@ def image(url, *, small=False):
     return item
 
 
+def display_name(obj):
+    if obj.printed_name and obj.printed_name != obj.name:
+        return f"{obj.printed_name} / {obj.name}"
+    return obj.name
+
+
 def rules(obj):
     components = []
     if obj.mana_cost:
         components.append(text(obj.mana_cost, weight="bold"))
-    if obj.type_line:
-        components.append(text(obj.type_line, color="#596579"))
+    if obj.printed_type_line or obj.type_line:
+        components.append(text(obj.printed_type_line or obj.type_line, color="#596579"))
+    if obj.printed_text and obj.printed_text != obj.oracle_text:
+        components.append(text("牌面文字", weight="bold", color="#596579"))
+        components.append(text(obj.printed_text))
+        components.append(text("現行 Oracle（英文）", weight="bold", color="#596579"))
     if obj.oracle_text:
         components.append(text(obj.oracle_text))
     stats = f"{obj.power}/{obj.toughness}" if obj.power or obj.toughness else ""
@@ -40,7 +50,7 @@ def rules(obj):
 
 def card_bubble(response: CardResponse):
     card = response.card
-    title = text(card.name, size="lg", weight="bold", limit=200)
+    title = text(display_name(card), size="lg", weight="bold", limit=200)
     title["action"] = {"type": "uri", "uri": card.scryfall_uri}
     contents = [title]
     panels = card_panels(card)
@@ -49,7 +59,7 @@ def card_bubble(response: CardResponse):
     link = card.scryfall_uri
     if response.mode in ("prices", "rulings", "legality"):
         headings = {"prices": "Prices for ", "rulings": "Rulings for ", "legality": "Legality for "}
-        title["text"] = headings[response.mode] + card.name[:170]
+        title["text"] = headings[response.mode] + display_name(card)[:170]
         if response.mode == "rulings":
             link += "#rulings"
         title["action"]["uri"] = link
@@ -73,7 +83,9 @@ def card_bubble(response: CardResponse):
         if len(panels) == 1 and panels[0][1]:
             bubble["hero"] = image(panels[0][1])
         else:
-            for name, url in panels:
+            for index, (name, url) in enumerate(panels):
+                if not card.image_url and index < len(card.faces):
+                    name = display_name(card.faces[index])
                 if len(panels) > 1:
                     contents.append(text(name, weight="bold", limit=200))
                 contents.append(image(url) if url else text("這一面的卡圖未提供。"))
@@ -83,7 +95,7 @@ def card_bubble(response: CardResponse):
         if card.faces and not card.oracle_text:
             details = []
             for face in card.faces:
-                details += [text(face.name, weight="bold", limit=200)] + rules(face)
+                details += [text(display_name(face), weight="bold", limit=200)] + rules(face)
         if not details:
             details = [text("卡牌文字未提供，請在 Scryfall 查看。")]
         thumbnails = [image(url, small=True) for _, url in panels if url]
@@ -96,6 +108,12 @@ def card_bubble(response: CardResponse):
             contents.extend(details)
     if not has_image and response.mode in ("text", "image"):
         contents.append(text("卡圖未提供。", color="#a44231"))
+    if card.language_note:
+        contents.append(text(card.language_note, color="#738095"))
+    if card.lang != "en":
+        contents.append(text(f"Scryfall 語言：{card.lang}", color="#738095", limit=100))
+        if response.mode == "text" and not (card.printed_text or any(f.printed_text for f in card.faces)):
+            contents.append(text("未提供此語言牌面文字；顯示英文 Oracle。", color="#738095"))
     bubble["body"] = {"type": "box", "layout": "vertical", "spacing": "md", "contents": contents}
     bubble["footer"] = {"type": "box", "layout": "vertical", "contents": [{
         "type": "button", "style": "link", "height": "sm",
@@ -139,5 +157,5 @@ def flex_contents(responses):
 
 
 def alt_text(responses):
-    names = [r.card.name if isinstance(r, CardResponse) else r.text for r in responses]
+    names = [display_name(r.card) if isinstance(r, CardResponse) else r.text for r in responses]
     return ("MTG 查卡：" + "、".join(names))[:400]

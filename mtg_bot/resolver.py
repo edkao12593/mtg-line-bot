@@ -7,7 +7,7 @@ from .scryfall import ScryfallError
 
 class CardLookup(Protocol):
     async def get_card_by_name(self, name: str, set_code: str | None = None) -> Card: ...
-    async def get_card_by_collector(self, set_code: str, number: str) -> Card: ...
+    async def get_card_by_collector(self, set_code: str, number: str, name: str | None = None) -> Card: ...
     async def get_rulings(self, card: Card) -> tuple[dict, ...]: ...
     async def get_price_prints(self, card: Card) -> tuple[tuple[Card, ...], bool]: ...
 
@@ -25,7 +25,7 @@ class Resolver:
         try:
             async with self.semaphore:
                 if query.collector_number:
-                    card = await self.client.get_card_by_collector(query.set_code, query.collector_number)
+                    card = await self.client.get_card_by_collector(query.set_code, query.collector_number, query.name)
                 elif query.set_code:
                     card = await self.client.get_card_by_name(query.name, query.set_code)
                 else:
