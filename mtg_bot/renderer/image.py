@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 from typing import Protocol
 import httpx
 from PIL import Image
@@ -7,6 +8,9 @@ from ..cache import TTLCache
 from ..models import Card, CardResult, ImageResponse, TextResponse, Response
 from ..scryfall import safe_image_url
 from .grid import compose, encode_jpeg
+
+
+log = logging.getLogger(__name__)
 
 
 class ImagePublisher(Protocol):
@@ -34,28 +38,42 @@ class ImageRenderer:
         cached = self.cache.get(url)
         if cached is not None:
             return cached
-        try:
-            async with self.semaphore:
-                async with self.http.stream("GET", url, follow_redirects=False) as r:
-                    if r.status_code != 200:
-                        return None
-                    chunks, size = [], 0
-                    async for chunk in r.aiter_bytes():
-                        size += len(chunk)
-                        if size > 1_000_000:
+        for attempt in range(2):
+            try:
+                async with self.semaphore:
+                    headers = {"User-Agent": "mtg-line-bot/0.1", "Accept": "image/jpeg,image/png"}
+                    async with self.http.stream("GET", url, headers=headers, follow_redirects=False) as r:
+                        if r.status_code != 200:
+                            log.warning("card image HTTP status=%s attempt=%s", r.status_code, attempt + 1)
+                            if r.status_code in (500, 502, 503, 504) and attempt == 0:
+                                await asyncio.sleep(0.3)
+                                continue
                             return None
-                        chunks.append(chunk)
-                    data = b"".join(chunks)
-            def validate():
-                with Image.open(io.BytesIO(data)) as img:
-                    if img.width * img.height > 4_000_000 or img.format not in ("JPEG", "PNG"):
-                        raise ValueError("unsupported image")
-                    img.load()
-            await asyncio.to_thread(validate)
-            self.cache.put(url, data, 86400)
-            return data
-        except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError):
-            return None
+                        chunks, size = [], 0
+                        async for chunk in r.aiter_bytes():
+                            size += len(chunk)
+                            if size > 1_000_000:
+                                log.warning("card image exceeds download size limit")
+                                return None
+                            chunks.append(chunk)
+                        data = b"".join(chunks)
+                def validate():
+                    with Image.open(io.BytesIO(data)) as img:
+                        if img.width * img.height > 4_000_000 or img.format not in ("JPEG", "PNG"):
+                            raise ValueError("unsupported image")
+                        img.load()
+                await asyncio.to_thread(validate)
+                self.cache.put(url, data, 86400)
+                return data
+            except httpx.TransportError as exc:
+                log.warning("card image transport error=%s attempt=%s", type(exc).__name__, attempt + 1)
+                if attempt == 0:
+                    await asyncio.sleep(0.3)
+                    continue
+            except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError) as exc:
+                log.warning("card image download/validation error=%s", type(exc).__name__)
+                return None
+        return None
 
     async def render(self, results: list[CardResult], notices: tuple[str, ...] = ()) -> list[Response]:
         errors = list(notices)
@@ -81,6 +99,10 @@ class ImageRenderer:
                 responses.append(await self.publisher.publish(original, preview))
             missing = [name for (name, _), data in zip(panels, images) if data is None]
             errors.extend(f"{name}：卡圖暫時無法取得。" for name in missing)
+        links = [f"{result.card.name}\n{result.card.scryfall_uri}" for result in results if result.card]
+        text = "\n\n".join(links)
         if errors:
-            responses.append(TextResponse("\n".join(errors)[:4500]))
+            text += ("\n\n" if text else "") + "\n".join(errors)
+        if text:
+            responses.append(TextResponse(text[:4500]))
         return responses
