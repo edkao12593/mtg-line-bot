@@ -24,7 +24,8 @@ def eligible_events(body: dict) -> list[dict]:
 
 
 def to_line_messages(responses: list[Response]):
-    if len(responses) > 5:
+    card_count = sum(isinstance(r, CardResponse) for r in responses)
+    if card_count >= 2 or len(responses) > 5:
         if not any(isinstance(r, CardResponse) for r in responses):
             # An all-error reply needs one concise text message.
             if all(isinstance(r, TextResponse) for r in responses):

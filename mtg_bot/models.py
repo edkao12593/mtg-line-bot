@@ -6,7 +6,9 @@ from typing import Literal
 class CardQuery:
     name: str
     key: str
-    mode: Literal["text", "image"] = "text"
+    mode: Literal["text", "image", "prices", "rulings", "legality"] = "text"
+    set_code: str | None = None
+    collector_number: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,12 +46,26 @@ class Card:
     toughness: str = ""
     loyalty: str = ""
 
+    set_name: str = ""
+    collector_number: str = ""
+    prints_search_uri: str = ""
+    legalities: tuple[tuple[str, str], ...] = ()
+    prices: tuple[tuple[str, str | None], ...] = ()
+
+
+@dataclass(frozen=True)
+class Detail:
+    heading: str
+    body: str
+
 
 @dataclass(frozen=True)
 class CardResult:
     query: CardQuery
     card: Card | None = None
     error: Literal["not_found", "ambiguous", "unavailable"] | None = None
+    details: tuple[Detail, ...] = ()
+    more: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,7 +82,9 @@ class ImageResponse:
 @dataclass(frozen=True)
 class CardResponse:
     card: Card
-    mode: Literal["text", "image"] = "text"
+    mode: Literal["text", "image", "prices", "rulings", "legality"] = "text"
+    details: tuple[Detail, ...] = ()
+    more: bool = False
 
 
 Response = TextResponse | ImageResponse | CardResponse

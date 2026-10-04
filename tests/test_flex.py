@@ -22,21 +22,23 @@ async def test_text_and_image_modes(card):
     results = [CardResult(CardQuery("Sol Ring", "sol ring", mode), card) for mode in ("text", "image")]
     responses = await CardRenderer().render(results)
     messages = to_line_messages(responses)
-    plain, picture = [m.to_dict() for m in messages]
-    assert plain['contents']['type'] == 'bubble'
+    assert len(messages) == 1
+    assert messages[0].to_dict()['contents']['type'] == 'carousel'
+    plain, picture = messages[0].to_dict()['contents']['contents']
+    assert plain['type'] == 'bubble'
     assert card.oracle_text in json.dumps(plain)
     assert card.oracle_text not in json.dumps(picture)
-    assert picture['contents']['hero']['url'] == card.image_url
+    assert picture['hero']['url'] == card.image_url
     assert card.scryfall_uri in json.dumps(plain)
 
 
-@pytest.mark.parametrize('count,kind', [(1,'bubble'),(2,'bubble'),(5,'bubble'),(6,'carousel'),(9,'carousel')])
+@pytest.mark.parametrize('count,kind', [(1,'bubble'),(2,'carousel'),(5,'carousel'),(6,'carousel'),(9,'carousel')])
 def test_reply_boundary_and_order(card, count, kind):
     cards = [CardResponse(replace(card, name=f'Card {i}')) for i in range(count)]
     messages = to_line_messages(cards)
-    assert len(messages) == (count if count <= 5 else 1)
+    assert len(messages) == 1
     assert messages[0].to_dict()['contents']['type'] == kind
-    if count > 5:
+    if count >= 2:
         titles = [b['body']['contents'][0]['text'] for b in messages[0].to_dict()['contents']['contents']]
         assert titles == [f'Card {i}' for i in range(count)]
 

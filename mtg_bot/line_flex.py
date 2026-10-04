@@ -6,7 +6,7 @@ from .renderer.image import card_panels
 
 
 def text(value, *, size="sm", color="#253047", weight="regular", limit=1500):
-    return {"type": "text", "text": value if len(value) <= limit else value[:limit - 1] + "…", "size": size,
+    return {"type": "text", "text": value if len(value) <= limit else value[:max(0, limit - 10)] + "…（已截斷）", "size": size,
             "color": color, "weight": weight, "wrap": True}
 
 
@@ -46,7 +46,30 @@ def card_bubble(response: CardResponse):
     panels = card_panels(card)
     has_image = any(url for _, url in panels)
     bubble = {"type": "bubble", "size": "mega"}
-    if response.mode == "image":
+    link = card.scryfall_uri
+    if response.mode in ("prices", "rulings", "legality"):
+        headings = {"prices": "Prices for ", "rulings": "Rulings for ", "legality": "Legality for "}
+        title["text"] = headings[response.mode] + card.name[:170]
+        if response.mode == "rulings":
+            link += "#rulings"
+        title["action"]["uri"] = link
+        if response.mode == "legality":
+            labels = {"legal": "Legal", "not_legal": "Not Legal", "banned": "Banned", "restricted": "Restricted"}
+            contents.extend(text(f"{fmt}: {labels.get(status, status)}", limit=300)
+                            for fmt, status in card.legalities)
+            if not card.legalities:
+                contents.append(text("合法性資料未提供。"))
+        else:
+            for detail in response.details:
+                contents.append(text(detail.heading, weight="bold", limit=200))
+                contents.append(text(detail.body, limit=2400))
+            if not response.details:
+                contents.append(text("沒有裁定資料。" if response.mode == "rulings" else "暫無可用價格資料。"))
+            if response.more:
+                more = text("更多裁定（部分內容未顯示）" if response.mode == "rulings" else "更多版本價格", color="#2763a5")
+                more["action"] = {"type": "uri", "uri": link}
+                contents.append(more)
+    elif response.mode == "image":
         if len(panels) == 1 and panels[0][1]:
             bubble["hero"] = image(panels[0][1])
         else:
@@ -71,12 +94,12 @@ def card_bubble(response: CardResponse):
             ]})
         else:
             contents.extend(details)
-    if not has_image:
+    if not has_image and response.mode in ("text", "image"):
         contents.append(text("卡圖未提供。", color="#a44231"))
     bubble["body"] = {"type": "box", "layout": "vertical", "spacing": "md", "contents": contents}
     bubble["footer"] = {"type": "box", "layout": "vertical", "contents": [{
         "type": "button", "style": "link", "height": "sm",
-        "action": {"type": "uri", "label": "在 Scryfall 查看", "uri": card.scryfall_uri},
+        "action": {"type": "uri", "label": "在 Scryfall 查看", "uri": link},
     }]}
     return bubble
 
@@ -99,14 +122,14 @@ def flex_contents(responses):
         if isinstance(node, dict):
             if node.get("type") == "text" and "action" not in node:
                 value = node["text"]
-                node["text"] = value if len(value) <= limit else value[:limit - 1] + "…"
+                node["text"] = value if len(value) <= limit else value[:max(0, limit - 10)] + "…（已截斷）"
             for child in node.values():
                 shorten(child, limit)
         elif isinstance(node, list):
             for child in node:
                 shorten(child, limit)
     budget = 29_000 if len(bubbles) == 1 else 49_000
-    for limit in (600, 200):
+    for limit in (600, 200, 100, 60):
         if len(json.dumps(contents, ensure_ascii=False).encode()) <= budget:
             break
         shorten(contents, limit)

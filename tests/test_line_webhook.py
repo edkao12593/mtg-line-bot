@@ -134,7 +134,9 @@ async def test_full_signed_webhook_core_pipeline(tmp_path,jpeg):
                 assert token == 'token' and len(responses) == 3
                 assert 'bad' in responses[2].text
                 messages = to_line_messages(responses)
-                assert [m.type for m in messages] == ['flex', 'flex', 'text']
+                assert [m.type for m in messages] == ['flex']
+                assert messages[0].to_dict()['contents']['type'] == 'carousel'
+                assert len(messages[0].to_dict()['contents']['contents']) == 3
                 assert len(calls) == 3  # Flex uses upstream URLs; no server image download
                 assert len([url for url in calls if 'api.scryfall.com' in url]) == 3
         await resolver.close()

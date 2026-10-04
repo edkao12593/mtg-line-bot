@@ -17,16 +17,23 @@ class CardRenderer:
     async def render(self, results: list[CardResult], notices: tuple[str, ...] = ()) -> list[Response]:
         responses: list[Response] = []
         for result in results:
-            if result.card:
+            if result.card and not result.error:
                 card = replace(result.card, scryfall_uri=clean_card_link(result.card.scryfall_uri))
-                responses.append(CardResponse(card, result.query.mode))
+                responses.append(CardResponse(card, result.query.mode, result.details, result.more))
             else:
                 reason = {
                     "not_found": "查不到卡",
                     "ambiguous": "有多張卡符合，請輸入更完整的卡名",
                     "unavailable": "查詢暫時失敗，請稍後再試",
                 }.get(result.error, "查詢暫時失敗")
-                responses.append(TextResponse(f"{result.query.name}：{reason}。"))
+                label = result.query.name
+                if result.query.set_code:
+                    label += f"|{result.query.set_code}"
+                if result.query.collector_number:
+                    label += f"|{result.query.collector_number}"
+                if result.error == "not_found" and result.query.set_code:
+                    reason = "指定系列或版本中查不到卡"
+                responses.append(TextResponse(f"{label}：{reason}。"))
         if notices:
             responses.append(TextResponse("\n".join(notices)[:4500]))
         return responses

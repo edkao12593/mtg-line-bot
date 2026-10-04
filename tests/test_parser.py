@@ -23,5 +23,5 @@ def test_alias_and_limit():
 
 def test_long_and_unsupported():
     result = parse_queries('[[Sol Ring|CMM]] [[' + 'x' * 201 + ']] [[A]]')
-    assert [q.name for q in result.queries] == ['A']
-    assert len(result.notices) == 2
+    assert [q.name for q in result.queries] == ['Sol Ring', 'A']
+    assert len(result.notices) == 1
