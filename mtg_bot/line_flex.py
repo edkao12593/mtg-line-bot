@@ -1,0 +1,120 @@
+"""LINE-specific layout; the core only supplies CardResponse/TextResponse."""
+import json
+
+from .models import CardResponse, TextResponse
+from .renderer.image import card_panels
+
+
+def text(value, *, size="sm", color="#253047", weight="regular", limit=1500):
+    return {"type": "text", "text": value if len(value) <= limit else value[:limit - 1] + "…", "size": size,
+            "color": color, "weight": weight, "wrap": True}
+
+
+def image(url, *, small=False):
+    item = {"type": "image", "url": url, "size": "full", "aspectRatio": "488:680",
+            "aspectMode": "fit", "action": {"type": "uri", "uri": url}}
+    if small:
+        item.update(flex=0, size="100px")
+    return item
+
+
+def rules(obj):
+    components = []
+    if obj.mana_cost:
+        components.append(text(obj.mana_cost, weight="bold"))
+    if obj.type_line:
+        components.append(text(obj.type_line, color="#596579"))
+    if obj.oracle_text:
+        components.append(text(obj.oracle_text))
+    stats = f"{obj.power}/{obj.toughness}" if obj.power or obj.toughness else ""
+    if obj.loyalty:
+        stats += (" · " if stats else "") + "Loyalty " + obj.loyalty
+    if stats:
+        components.append(text(stats, weight="bold"))
+    if obj.flavor_text:
+        flavor = text(obj.flavor_text, color="#738095", limit=300)
+        flavor["style"] = "italic"
+        components.append(flavor)
+    return components
+
+
+def card_bubble(response: CardResponse):
+    card = response.card
+    title = text(card.name, size="lg", weight="bold", limit=200)
+    title["action"] = {"type": "uri", "uri": card.scryfall_uri}
+    contents = [title]
+    panels = card_panels(card)
+    has_image = any(url for _, url in panels)
+    bubble = {"type": "bubble", "size": "mega"}
+    if response.mode == "image":
+        if len(panels) == 1 and panels[0][1]:
+            bubble["hero"] = image(panels[0][1])
+        else:
+            for name, url in panels:
+                if len(panels) > 1:
+                    contents.append(text(name, weight="bold", limit=200))
+                contents.append(image(url) if url else text("這一面的卡圖未提供。"))
+    else:
+        # Split/adventure cards share one printed image but retain both rules faces.
+        details = rules(card)
+        if card.faces and not card.oracle_text:
+            details = []
+            for face in card.faces:
+                details += [text(face.name, weight="bold", limit=200)] + rules(face)
+        if not details:
+            details = [text("卡牌文字未提供，請在 Scryfall 查看。")]
+        thumbnails = [image(url, small=True) for _, url in panels if url]
+        if thumbnails:
+            contents.append({"type": "box", "layout": "horizontal", "spacing": "md", "contents": [
+                {"type": "box", "layout": "vertical", "flex": 1, "spacing": "sm", "contents": details},
+                {"type": "box", "layout": "vertical", "flex": 0, "spacing": "sm", "contents": thumbnails},
+            ]})
+        else:
+            contents.extend(details)
+    if not has_image:
+        contents.append(text("卡圖未提供。", color="#a44231"))
+    bubble["body"] = {"type": "box", "layout": "vertical", "spacing": "md", "contents": contents}
+    bubble["footer"] = {"type": "box", "layout": "vertical", "contents": [{
+        "type": "button", "style": "link", "height": "sm",
+        "action": {"type": "uri", "label": "在 Scryfall 查看", "uri": card.scryfall_uri},
+    }]}
+    return bubble
+
+
+def error_bubble(response: TextResponse):
+    return {"type": "bubble", "size": "mega", "body": {
+        "type": "box", "layout": "vertical", "spacing": "md", "contents": [
+            text("查詢提示", size="lg", weight="bold"), text(response.text, color="#a44231"),
+        ],
+    }}
+
+
+def flex_contents(responses):
+    bubbles = [card_bubble(r) if isinstance(r, CardResponse) else error_bubble(r) for r in responses]
+    if not 1 <= len(bubbles) <= 12:
+        raise ValueError("invalid bubble count")
+    contents = bubbles[0] if len(bubbles) == 1 else {"type": "carousel", "contents": bubbles}
+    # Keep unusually long Oracle text within LINE's JSON size limits.
+    def shorten(node, limit):
+        if isinstance(node, dict):
+            if node.get("type") == "text" and "action" not in node:
+                value = node["text"]
+                node["text"] = value if len(value) <= limit else value[:limit - 1] + "…"
+            for child in node.values():
+                shorten(child, limit)
+        elif isinstance(node, list):
+            for child in node:
+                shorten(child, limit)
+    budget = 29_000 if len(bubbles) == 1 else 49_000
+    for limit in (600, 200):
+        if len(json.dumps(contents, ensure_ascii=False).encode()) <= budget:
+            break
+        shorten(contents, limit)
+    if len(json.dumps(contents, ensure_ascii=False).encode()) > budget:
+        raise ValueError("Flex content too large")
+    return contents
+
+
+def alt_text(responses):
+    names = [r.card.name if isinstance(r, CardResponse) else r.text for r in responses]
+    return ("MTG 查卡：" + "、".join(names))[:400]

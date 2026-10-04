@@ -41,8 +41,14 @@ def safe_image_url(value: str | None) -> str | None:
 def decode_card(data: dict) -> Card:
     def image(obj):
         return safe_image_url((obj.get("image_uris") or {}).get("normal"))
+    def fields(obj):
+        return {key: str(obj.get(key) or "") for key in (
+            "mana_cost", "type_line", "oracle_text", "flavor_text", "power", "toughness", "loyalty"
+        )}
     return Card(data["id"], data["name"], data["layout"], data["scryfall_uri"], image(data),
-                tuple(CardFace(f["name"], image(f)) for f in data.get("card_faces", [])))
+                tuple(CardFace(f["name"], image(f), **fields(f)) for f in data.get("card_faces", [])),
+                **fields(data))
+
 
 
 class ScryfallClient:

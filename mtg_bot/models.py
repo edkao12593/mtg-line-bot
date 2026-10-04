@@ -6,7 +6,7 @@ from typing import Literal
 class CardQuery:
     name: str
     key: str
-    mode: Literal["image", "image_alias"] = "image"
+    mode: Literal["text", "image"] = "text"
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,13 @@ class ParseResult:
 class CardFace:
     name: str
     image_url: str | None
+    mana_cost: str = ""
+    type_line: str = ""
+    oracle_text: str = ""
+    flavor_text: str = ""
+    power: str = ""
+    toughness: str = ""
+    loyalty: str = ""
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,13 @@ class Card:
     scryfall_uri: str
     image_url: str | None
     faces: tuple[CardFace, ...] = ()
+    mana_cost: str = ""
+    type_line: str = ""
+    oracle_text: str = ""
+    flavor_text: str = ""
+    power: str = ""
+    toughness: str = ""
+    loyalty: str = ""
 
 
 @dataclass(frozen=True)
@@ -49,4 +63,10 @@ class ImageResponse:
     preview_url: str
 
 
-Response = TextResponse | ImageResponse
+@dataclass(frozen=True)
+class CardResponse:
+    card: Card
+    mode: Literal["text", "image"] = "text"
+
+
+Response = TextResponse | ImageResponse | CardResponse

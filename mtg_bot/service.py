@@ -1,11 +1,11 @@
 from .parser import parse_queries
 from .models import Response
 from .resolver import Resolver
-from .renderer.image import ImageRenderer
+from .renderer.cards import CardRenderer
 
 
 class LookupService:
-    def __init__(self, resolver: Resolver, renderer: ImageRenderer):
+    def __init__(self, resolver: Resolver, renderer: CardRenderer):
         self.resolver, self.renderer = resolver, renderer
 
     async def handle_text(self, text: str) -> list[Response]:

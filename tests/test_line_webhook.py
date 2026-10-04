@@ -49,7 +49,7 @@ def test_line_mapping_and_limit():
     messages = to_line_messages([ImageResponse('https://b.test/a.jpg','https://b.test/p.jpg'),TextResponse('oops')])
     assert messages[0].original_content_url == 'https://b.test/a.jpg'
     assert messages[1].text == 'oops'
-    with pytest.raises(ValueError): to_line_messages([TextResponse('a')] * 6)
+    assert len(to_line_messages([TextResponse('a')] * 6)) == 1
 
 
 def test_queue_atomic_capacity_recovery_and_expiry(tmp_path):
@@ -103,7 +103,7 @@ async def test_full_signed_webhook_core_pipeline(tmp_path,jpeg):
     import httpx
     from mtg_bot.scryfall import ScryfallClient
     from mtg_bot.resolver import Resolver
-    from mtg_bot.renderer.image import ImageRenderer
+    from mtg_bot.renderer.cards import CardRenderer
     from mtg_bot.service import LookupService
     calls, replies = [], []
     def upstream(request):
@@ -117,7 +117,7 @@ async def test_full_signed_webhook_core_pipeline(tmp_path,jpeg):
         async def reply(self,token,responses): replies.append((token,responses))
     async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http:
         resolver = Resolver(ScryfallClient(http,user_agent='test/contact'))
-        service = LookupService(resolver,ImageRenderer(http,LocalImageStore(tmp_path/'images','https://bot.test')))
+        service = LookupService(resolver,CardRenderer())
         app = create_app(Settings('secret','token','https://bot.test','test',tmp_path),service=service,sender=Sender())
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://bot.test') as client:
@@ -131,10 +131,11 @@ async def test_full_signed_webhook_core_pipeline(tmp_path,jpeg):
                     await asyncio.sleep(.01)
                 assert len(replies) == 1
                 token,responses = replies[0]
-                assert token == 'token' and len(responses) == 2
-                assert 'bad' in responses[1].text
-                image = await client.get(responses[0].original_url)
-                assert image.status_code == 200 and image.headers['content-type'] == 'image/jpeg'
+                assert token == 'token' and len(responses) == 3
+                assert 'bad' in responses[2].text
+                messages = to_line_messages(responses)
+                assert [m.type for m in messages] == ['flex', 'flex', 'text']
+                assert len(calls) == 3  # Flex uses upstream URLs; no server image download
                 assert len([url for url in calls if 'api.scryfall.com' in url]) == 3
         await resolver.close()
 

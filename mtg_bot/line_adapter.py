@@ -1,5 +1,6 @@
-from linebot.v3.messaging import AsyncMessagingApi, ReplyMessageRequest, ImageMessage, TextMessage
-from .models import ImageResponse, TextResponse, Response
+from linebot.v3.messaging import AsyncMessagingApi, ReplyMessageRequest, ImageMessage, TextMessage, FlexMessage, FlexContainer
+from .models import ImageResponse, TextResponse, CardResponse, Response
+from .line_flex import flex_contents, alt_text
 from .parser import parse_queries
 
 
@@ -24,13 +25,22 @@ def eligible_events(body: dict) -> list[dict]:
 
 def to_line_messages(responses: list[Response]):
     if len(responses) > 5:
-        raise ValueError("too many LINE messages")
+        if not any(isinstance(r, CardResponse) for r in responses):
+            # An all-error reply needs one concise text message.
+            if all(isinstance(r, TextResponse) for r in responses):
+                return [TextMessage(text="\n".join(r.text for r in responses)[:4500])]
+            raise ValueError("too many LINE messages")
+        if not all(isinstance(r, (CardResponse, TextResponse)) for r in responses):
+            raise ValueError("cannot combine these responses")
+        return [FlexMessage(alt_text=alt_text(responses), contents=FlexContainer.from_dict(flex_contents(responses)))]
     messages = []
     for response in responses:
         if isinstance(response, ImageResponse):
             messages.append(ImageMessage(original_content_url=response.original_url, preview_image_url=response.preview_url))
         elif isinstance(response, TextResponse):
             messages.append(TextMessage(text=response.text))
+        elif isinstance(response, CardResponse):
+            messages.append(FlexMessage(alt_text=alt_text([response]), contents=FlexContainer.from_dict(flex_contents([response]))))
         else:
             raise TypeError("unknown response")
     return messages

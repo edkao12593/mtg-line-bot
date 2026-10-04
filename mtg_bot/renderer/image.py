@@ -99,7 +99,7 @@ class ImageRenderer:
                 responses.append(await self.publisher.publish(original, preview))
             missing = [name for (name, _), data in zip(panels, images) if data is None]
             errors.extend(f"{name}：卡圖暫時無法取得。" for name in missing)
-        links = [f"{result.card.name}\n{result.card.scryfall_uri.split('?')[0]}" for result in results if result.card]
+        links = [f"{result.card.name}\n{result.card.scryfall_uri}" for result in results if result.card]
         text = "\n\n".join(links)
         if errors:
             text += ("\n\n" if text else "") + "\n".join(errors)

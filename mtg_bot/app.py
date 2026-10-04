@@ -15,7 +15,7 @@ from linebot.v3.webhook import SignatureValidator
 from linebot.v3.messaging import AsyncApiClient, AsyncMessagingApi, Configuration
 from .line_adapter import eligible_events, LineReplySender
 from .models import TextResponse
-from .renderer.image import ImageRenderer
+from .renderer.cards import CardRenderer
 from .resolver import Resolver
 from .scryfall import ScryfallClient
 from .service import LookupService
@@ -96,8 +96,7 @@ def create_app(settings: Settings | None = None, *, service=None, sender=None, s
         resolver = None
         if service is None:
             resolver = Resolver(ScryfallClient(http, user_agent=settings.user_agent))
-            publisher = LocalImageStore(settings.data_dir / "images", settings.base_url)
-            service = LookupService(resolver, ImageRenderer(http, publisher))
+            service = LookupService(resolver, CardRenderer())
         if sender is None:
             sender = LineReplySender(AsyncMessagingApi(sdk))
         tasks = [asyncio.create_task(worker(inbox, service, sender)) for _ in range(2)] if start_workers else []
