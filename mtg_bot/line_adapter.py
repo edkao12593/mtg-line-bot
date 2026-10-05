@@ -1,11 +1,18 @@
-from linebot.v3.messaging import AsyncMessagingApi, ReplyMessageRequest, ImageMessage, TextMessage, FlexMessage, FlexContainer
-from .models import ImageResponse, TextResponse, CardResponse, Response
-from .line_flex import flex_contents, alt_text
+from linebot.v3.messaging import (
+    AsyncMessagingApi,
+    FlexContainer,
+    FlexMessage,
+    ReplyMessageRequest,
+    TextMessage,
+)
+
+from .line_flex import alt_text, flex_contents
+from .models import CardResponse, Response, TextResponse
 from .parser import parse_queries
 
 
 def eligible_events(body: dict) -> list[dict]:
-    """Join/follow/non-text/ordinary conversation are silent."""
+    """Select active text events that contain a card query or syntax error."""
     events = []
     for event in body.get("events", []):
         message = event.get("message", {})
@@ -19,7 +26,9 @@ def eligible_events(body: dict) -> list[dict]:
             continue
         if not event.get("webhookEventId") or not event.get("replyToken"):
             continue
-        events.append({"id": event["webhookEventId"], "token": event["replyToken"], "text": text})
+        events.append(
+            {"id": event["webhookEventId"], "token": event["replyToken"], "text": text}
+        )
     return events
 
 
@@ -33,15 +42,23 @@ def to_line_messages(responses: list[Response]):
             raise ValueError("too many LINE messages")
         if not all(isinstance(r, (CardResponse, TextResponse)) for r in responses):
             raise ValueError("cannot combine these responses")
-        return [FlexMessage(alt_text=alt_text(responses), contents=FlexContainer.from_dict(flex_contents(responses)))]
+        return [
+            FlexMessage(
+                alt_text=alt_text(responses),
+                contents=FlexContainer.from_dict(flex_contents(responses)),
+            )
+        ]
     messages = []
     for response in responses:
-        if isinstance(response, ImageResponse):
-            messages.append(ImageMessage(original_content_url=response.original_url, preview_image_url=response.preview_url))
-        elif isinstance(response, TextResponse):
+        if isinstance(response, TextResponse):
             messages.append(TextMessage(text=response.text))
         elif isinstance(response, CardResponse):
-            messages.append(FlexMessage(alt_text=alt_text([response]), contents=FlexContainer.from_dict(flex_contents([response]))))
+            messages.append(
+                FlexMessage(
+                    alt_text=alt_text([response]),
+                    contents=FlexContainer.from_dict(flex_contents([response])),
+                )
+            )
         else:
             raise TypeError("unknown response")
     return messages
@@ -53,4 +70,9 @@ class LineReplySender:
 
     async def reply(self, token: str, responses: list[Response]):
         if responses:
-            await self.api.reply_message(ReplyMessageRequest(reply_token=token, messages=to_line_messages(responses)), _request_timeout=8)
+            await self.api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=token, messages=to_line_messages(responses)
+                ),
+                _request_timeout=8,
+            )

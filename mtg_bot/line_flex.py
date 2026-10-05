@@ -1,18 +1,38 @@
 """LINE-specific layout; the core only supplies CardResponse/TextResponse."""
+
 import json
 
 from .models import CardResponse, TextResponse
-from .renderer.image import card_panels
+from .renderer.cards import card_panels
+
+
+def truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    suffix = "…（已截斷）"
+    return value[: max(0, limit - len(suffix))] + suffix[:limit]
 
 
 def text(value, *, size="sm", color="#253047", weight="regular", limit=1500):
-    return {"type": "text", "text": value if len(value) <= limit else value[:max(0, limit - 10)] + "…（已截斷）", "size": size,
-            "color": color, "weight": weight, "wrap": True}
+    return {
+        "type": "text",
+        "text": truncate(value, limit),
+        "size": size,
+        "color": color,
+        "weight": weight,
+        "wrap": True,
+    }
 
 
 def image(url, *, small=False):
-    item = {"type": "image", "url": url, "size": "full", "aspectRatio": "488:680",
-            "aspectMode": "fit", "action": {"type": "uri", "uri": url}}
+    item = {
+        "type": "image",
+        "url": url,
+        "size": "full",
+        "aspectRatio": "488:680",
+        "aspectMode": "fit",
+        "action": {"type": "uri", "uri": url},
+    }
     if small:
         item.update(flex=0, size="100px")
     return item
@@ -36,7 +56,9 @@ def rules(obj, *, lang="en", use_printed=True):
     elif use_printed and obj.printed_text:
         components.append(text(obj.printed_text))
     else:
-        components.append(text("未提供此語言牌面文字，請在 Scryfall 查看。", color="#738095"))
+        components.append(
+            text("未提供此語言牌面文字，請在 Scryfall 查看。", color="#738095")
+        )
     stats = f"{obj.power}/{obj.toughness}" if obj.power or obj.toughness else ""
     if obj.loyalty:
         stats += (" · " if stats else "") + "Loyalty " + obj.loyalty
@@ -59,15 +81,26 @@ def card_bubble(response: CardResponse):
     bubble = {"type": "bubble", "size": "mega"}
     link = card.scryfall_uri
     if response.mode in ("prices", "rulings", "legality"):
-        headings = {"prices": "Prices for ", "rulings": "Rulings for ", "legality": "Legality for "}
+        headings = {
+            "prices": "Prices for ",
+            "rulings": "Rulings for ",
+            "legality": "Legality for ",
+        }
         title["text"] = headings[response.mode] + display_name(card)[:170]
         if response.mode == "rulings":
             link += "#rulings"
         title["action"]["uri"] = link
         if response.mode == "legality":
-            labels = {"legal": "Legal", "not_legal": "Not Legal", "banned": "Banned", "restricted": "Restricted"}
-            contents.extend(text(f"{fmt}: {labels.get(status, status)}", limit=300)
-                            for fmt, status in card.legalities)
+            labels = {
+                "legal": "Legal",
+                "not_legal": "Not Legal",
+                "banned": "Banned",
+                "restricted": "Restricted",
+            }
+            contents.extend(
+                text(f"{fmt}: {labels.get(status, status)}", limit=300)
+                for fmt, status in card.legalities
+            )
             if not card.legalities:
                 contents.append(text("合法性資料未提供。"))
         else:
@@ -75,9 +108,20 @@ def card_bubble(response: CardResponse):
                 contents.append(text(detail.heading, weight="bold", limit=200))
                 contents.append(text(detail.body, limit=2400))
             if not response.details:
-                contents.append(text("沒有裁定資料。" if response.mode == "rulings" else "暫無可用價格資料。"))
+                contents.append(
+                    text(
+                        "沒有裁定資料。"
+                        if response.mode == "rulings"
+                        else "暫無可用價格資料。"
+                    )
+                )
             if response.more:
-                more = text("更多裁定（部分內容未顯示）" if response.mode == "rulings" else "更多版本價格", color="#2763a5")
+                more = text(
+                    "更多裁定（部分內容未顯示）"
+                    if response.mode == "rulings"
+                    else "更多版本價格",
+                    color="#2763a5",
+                )
                 more["action"] = {"type": "uri", "uri": link}
                 contents.append(more)
     elif response.mode == "image":
@@ -98,15 +142,36 @@ def card_bubble(response: CardResponse):
         if card.faces and not card.oracle_text:
             details = []
             for face in card.faces:
-                details += [text(display_name(face), weight="bold", limit=200)] + rules(face, lang=lang, use_printed=use_printed)
+                details += [text(display_name(face), weight="bold", limit=200)] + rules(
+                    face, lang=lang, use_printed=use_printed
+                )
         if not details:
             details = [text("卡牌文字未提供，請在 Scryfall 查看。")]
         thumbnails = [image(url, small=True) for _, url in panels if url]
         if thumbnails:
-            contents.append({"type": "box", "layout": "horizontal", "spacing": "md", "contents": [
-                {"type": "box", "layout": "vertical", "flex": 1, "spacing": "sm", "contents": details},
-                {"type": "box", "layout": "vertical", "flex": 0, "spacing": "sm", "contents": thumbnails},
-            ]})
+            contents.append(
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "spacing": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "flex": 1,
+                            "spacing": "sm",
+                            "contents": details,
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "flex": 0,
+                            "spacing": "sm",
+                            "contents": thumbnails,
+                        },
+                    ],
+                }
+            )
         else:
             contents.extend(details)
     if not has_image and response.mode in ("text", "image"):
@@ -115,38 +180,66 @@ def card_bubble(response: CardResponse):
         contents.append(text(card.language_note, color="#738095"))
     if card.lang != "en":
         contents.append(text(f"Scryfall 語言：{card.lang}", color="#738095", limit=100))
-    bubble["body"] = {"type": "box", "layout": "vertical", "spacing": "md", "contents": contents}
-    bubble["footer"] = {"type": "box", "layout": "vertical", "contents": [{
-        "type": "button", "style": "link", "height": "sm",
-        "action": {"type": "uri", "label": "在 Scryfall 查看", "uri": link},
-    }]}
+    bubble["body"] = {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "md",
+        "contents": contents,
+    }
+    bubble["footer"] = {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+            {
+                "type": "button",
+                "style": "link",
+                "height": "sm",
+                "action": {"type": "uri", "label": "在 Scryfall 查看", "uri": link},
+            }
+        ],
+    }
     return bubble
 
 
 def error_bubble(response: TextResponse):
-    return {"type": "bubble", "size": "mega", "body": {
-        "type": "box", "layout": "vertical", "spacing": "md", "contents": [
-            text("查詢提示", size="lg", weight="bold"), text(response.text, color="#a44231"),
-        ],
-    }}
+    return {
+        "type": "bubble",
+        "size": "mega",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "md",
+            "contents": [
+                text("查詢提示", size="lg", weight="bold"),
+                text(response.text, color="#a44231"),
+            ],
+        },
+    }
 
 
 def flex_contents(responses):
-    bubbles = [card_bubble(r) if isinstance(r, CardResponse) else error_bubble(r) for r in responses]
+    bubbles = [
+        card_bubble(r) if isinstance(r, CardResponse) else error_bubble(r)
+        for r in responses
+    ]
     if not 1 <= len(bubbles) <= 12:
         raise ValueError("invalid bubble count")
-    contents = bubbles[0] if len(bubbles) == 1 else {"type": "carousel", "contents": bubbles}
+    contents = (
+        bubbles[0] if len(bubbles) == 1 else {"type": "carousel", "contents": bubbles}
+    )
+
     # Keep unusually long Oracle text within LINE's JSON size limits.
     def shorten(node, limit):
         if isinstance(node, dict):
             if node.get("type") == "text" and "action" not in node:
                 value = node["text"]
-                node["text"] = value if len(value) <= limit else value[:max(0, limit - 10)] + "…（已截斷）"
+                node["text"] = truncate(value, limit)
             for child in node.values():
                 shorten(child, limit)
         elif isinstance(node, list):
             for child in node:
                 shorten(child, limit)
+
     budget = 29_000 if len(bubbles) == 1 else 49_000
     for limit in (600, 200, 100, 60):
         if len(json.dumps(contents, ensure_ascii=False).encode()) <= budget:
@@ -158,5 +251,8 @@ def flex_contents(responses):
 
 
 def alt_text(responses):
-    names = [display_name(r.card) if isinstance(r, CardResponse) else r.text for r in responses]
+    names = [
+        display_name(r.card) if isinstance(r, CardResponse) else r.text
+        for r in responses
+    ]
     return ("MTG 查卡：" + "、".join(names))[:400]

@@ -1,12 +1,17 @@
-from collections import OrderedDict
 import time
+from collections import OrderedDict
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
 
 class TTLCache(Generic[T]):
-    """Bounded LRU, lazy expiration, monotonic clock; event-loop-local use."""
+    """Cache recent lookups, removing expired entries when they are read.
+
+    Use within one event loop; the monotonic clock keeps TTLs independent of
+    changes to the system time.
+    """
+
     def __init__(self, capacity: int = 1024, clock=time.monotonic):
         self.capacity = capacity
         self.clock = clock

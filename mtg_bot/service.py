@@ -1,7 +1,7 @@
-from .parser import parse_queries
 from .models import Response
-from .resolver import Resolver
+from .parser import parse_queries
 from .renderer.cards import CardRenderer
+from .resolver import Resolver
 
 
 class LookupService:

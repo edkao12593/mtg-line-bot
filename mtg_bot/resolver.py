@@ -1,13 +1,20 @@
 import asyncio
-from typing import Protocol
-from .models import Card, CardQuery, CardResult, Detail
+from typing import Awaitable, Callable, Protocol, TypeVar
+
 from .cache import TTLCache
+from .models import Card, CardQuery, CardResult, Detail
 from .scryfall import ScryfallError
+
+T = TypeVar("T")
 
 
 class CardLookup(Protocol):
-    async def get_card_by_name(self, name: str, set_code: str | None = None) -> Card: ...
-    async def get_card_by_collector(self, set_code: str, number: str, name: str | None = None) -> Card: ...
+    async def get_card_by_name(
+        self, name: str, set_code: str | None = None
+    ) -> Card: ...
+    async def get_card_by_collector(
+        self, set_code: str, number: str, name: str | None = None
+    ) -> Card: ...
     async def get_rulings(self, card: Card) -> tuple[dict, ...]: ...
     async def get_price_prints(self, card: Card) -> tuple[tuple[Card, ...], bool]: ...
 
@@ -25,9 +32,13 @@ class Resolver:
         try:
             async with self.semaphore:
                 if query.collector_number:
-                    card = await self.client.get_card_by_collector(query.set_code, query.collector_number, query.name)
+                    card = await self.client.get_card_by_collector(
+                        query.set_code, query.collector_number, query.name
+                    )
                 elif query.set_code:
-                    card = await self.client.get_card_by_name(query.name, query.set_code)
+                    card = await self.client.get_card_by_name(
+                        query.name, query.set_code
+                    )
                 else:
                     card = await self.client.get_card_by_name(query.name)
             value = (card, None)
@@ -41,16 +52,9 @@ class Resolver:
     async def resolve(self, query: CardQuery) -> CardResult:
         value = self.cache.get(query.key)
         if value is None:
-            task = self.inflight.get(query.key)
-            if task is None:
-                task = asyncio.create_task(self._fetch(query))
-                self.inflight[query.key] = task
-                def done(completed):
-                    if self.inflight.get(query.key) is completed:
-                        self.inflight.pop(query.key, None)
-                    if not completed.cancelled():
-                        completed.exception()  # consume errors if all waiters timed out
-                task.add_done_callback(done)
+            task = self._shared_task(
+                self.inflight, query.key, lambda: self._fetch(query)
+            )
             try:
                 value = await asyncio.shield(task)
             except Exception:
@@ -73,20 +77,42 @@ class Resolver:
                     body = row["comment"]
                     if len(details) >= 8 or used + len(body) > 2400:
                         if not details:
-                            details.append(Detail(row["published_at"], body[:2300] + "…（已截斷）"))
+                            details.append(
+                                Detail(row["published_at"], body[:2300] + "…（已截斷）")
+                            )
                         break
                     details.append(Detail(row["published_at"], body))
                     used += len(body)
-                more = len(details) < len(rows) or any("（已截斷）" in d.body for d in details)
+                more = len(details) < len(rows) or any(
+                    "（已截斷）" in d.body for d in details
+                )
                 value = (tuple(details), more)
             else:
                 prints, more = await self.client.get_price_prints(card)
-                labels = {"usd": "USD", "usd_foil": "USD foil", "usd_etched": "USD etched",
-                          "eur": "EUR", "eur_foil": "EUR foil", "eur_etched": "EUR etched", "tix": "TIX"}
-                details = tuple(Detail(f"{p.set_name} · #{p.collector_number}",
-                    " • ".join(f"{labels.get(k, k)} {v}" for k, v in p.prices if v is not None)) for p in prints)
+                labels = {
+                    "usd": "USD",
+                    "usd_foil": "USD foil",
+                    "usd_etched": "USD etched",
+                    "eur": "EUR",
+                    "eur_foil": "EUR foil",
+                    "eur_etched": "EUR etched",
+                    "tix": "TIX",
+                }
+                details = tuple(
+                    Detail(
+                        f"{p.set_name} · #{p.collector_number}",
+                        " • ".join(
+                            f"{labels.get(k, k)} {v}"
+                            for k, v in p.prices
+                            if v is not None
+                        ),
+                    )
+                    for p in prints
+                )
                 value = (details, more)
-        self.detail_cache.put(f"{mode}:{card.id}", value, 900 if mode == "prices" else 86400)
+        self.detail_cache.put(
+            f"{mode}:{card.id}", value, 900 if mode == "prices" else 86400
+        )
         return value
 
     async def _details(self, card: Card, mode: str):
@@ -94,17 +120,29 @@ class Resolver:
         cached = self.detail_cache.get(key)
         if cached is not None:
             return cached
-        task = self.detail_inflight.get(key)
+        task = self._shared_task(
+            self.detail_inflight, key, lambda: self._fetch_details(card, mode)
+        )
+        return await asyncio.shield(task)
+
+    @staticmethod
+    def _shared_task(
+        pending: dict[str, asyncio.Task], key: str, fetch: Callable[[], Awaitable[T]]
+    ) -> asyncio.Task[T]:
+        task = pending.get(key)
         if task is None:
-            task = asyncio.create_task(self._fetch_details(card, mode))
-            self.detail_inflight[key] = task
+            task = asyncio.create_task(fetch())
+            pending[key] = task
+
             def done(completed):
-                if self.detail_inflight.get(key) is completed:
-                    self.detail_inflight.pop(key, None)
+                if pending.get(key) is completed:
+                    pending.pop(key, None)
+                # A request may finish after all callers time out; consume its error.
                 if not completed.cancelled():
                     completed.exception()
+
             task.add_done_callback(done)
-        return await asyncio.shield(task)
+        return task
 
     async def resolve_many(self, queries: tuple[CardQuery, ...]) -> list[CardResult]:
         return list(await asyncio.gather(*(self.resolve(q) for q in queries)))

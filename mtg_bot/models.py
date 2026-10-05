@@ -83,12 +83,6 @@ class TextResponse:
 
 
 @dataclass(frozen=True)
-class ImageResponse:
-    original_url: str
-    preview_url: str
-
-
-@dataclass(frozen=True)
 class CardResponse:
     card: Card
     mode: Literal["text", "image", "prices", "rulings", "legality"] = "text"
@@ -96,4 +90,4 @@ class CardResponse:
     more: bool = False
 
 
-Response = TextResponse | ImageResponse | CardResponse
+Response = TextResponse | CardResponse
